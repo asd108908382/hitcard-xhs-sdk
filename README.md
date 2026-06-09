@@ -143,10 +143,10 @@ RedisXhsOauthTokenStore store =
 
 ## 构建
 
-使用项目里的 Maven settings：
+这个项目不依赖私有 Maven settings。私有 `xhs-sdk` 已经直接放在仓库的 `libs/` 目录里，其他公共依赖正常从 Maven 仓库解析即可：
 
 ```bash
-mvn -s /Users/jiaweiguo/Documents/hitcard/settings.xml clean package -DskipTests
+mvn clean package -DskipTests
 ```
 
 构建产物：

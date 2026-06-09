@@ -15,6 +15,7 @@
     <properties>
         <maven.compiler.release>8</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <xhs.sdk.jar>${project.basedir}/libs/xhs-sdk-1.0.0.jar</xhs.sdk.jar>
         <okhttp.version>3.12.0</okhttp.version>
         <fastjson.version>1.2.75</fastjson.version>
         <jackson.version>2.15.0</jackson.version>
@@ -28,6 +29,8 @@
             <groupId>com.xhs</groupId>
             <artifactId>xhs-sdk</artifactId>
             <version>1.0.0</version>
+            <scope>system</scope>
+            <systemPath>${xhs.sdk.jar}</systemPath>
         </dependency>
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
