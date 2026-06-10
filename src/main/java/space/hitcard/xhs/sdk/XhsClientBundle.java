@@ -17,9 +17,18 @@ import com.xiaohongshu.fls.opensdk.client.OrderClient;
 import com.xiaohongshu.fls.opensdk.client.PackageClient;
 import com.xiaohongshu.fls.opensdk.client.ProductClient;
 import com.xiaohongshu.fls.opensdk.client.SupplyOrderClient;
+import redis.clients.jedis.JedisPool;
+import space.hitcard.xhs.sdk.oauth.RedisXhsOauthTokenStore;
+import space.hitcard.xhs.sdk.oauth.XhsOauthManagerFactory;
+import space.hitcard.xhs.sdk.oauth.XhsOauthTokenManager;
+import space.hitcard.xhs.sdk.oauth.XhsOauthTokenStore;
 
 /**
  * Aggregates all upstream XHS OpenSDK domain clients behind one validated config.
+ *
+ * <p>When built through {@link Builder#jedisPool(JedisPool)}, a cluster-ready
+ * Redis-backed {@link XhsOauthTokenManager} is initialized as a default capability
+ * and exposed via {@link #oauthTokenManager()} / {@link #oauthTokenStore()}.
  */
 public final class XhsClientBundle {
 
@@ -41,8 +50,15 @@ public final class XhsClientBundle {
     private final BoutiqueClient boutiqueClient;
     private final MaterialClient materialClient;
     private final InvoiceClient invoiceClient;
+    private final XhsOauthTokenStore oauthTokenStore;
+    private final XhsOauthTokenManager oauthTokenManager;
 
     private XhsClientBundle(XhsClientConfig config) {
+        this(config, null, null, XhsOauthTokenManager.DEFAULT_REFRESH_AHEAD_MILLIS);
+    }
+
+    private XhsClientBundle(XhsClientConfig config, JedisPool jedisPool, String oauthKeyPrefix,
+                            long oauthRefreshAheadMillis) {
         this.config = config;
         String url = config.getUrl();
         String appId = config.getAppId();
@@ -65,6 +81,16 @@ public final class XhsClientBundle {
         this.boutiqueClient = new BoutiqueClient(url, appId, version, appSecret);
         this.materialClient = new MaterialClient(url, appId, version, appSecret);
         this.invoiceClient = new InvoiceClient(url, appId, version, appSecret);
+        if (jedisPool != null) {
+            String prefix = oauthKeyPrefix == null || oauthKeyPrefix.trim().isEmpty()
+                    ? RedisXhsOauthTokenStore.DEFAULT_KEY_PREFIX : oauthKeyPrefix.trim();
+            this.oauthTokenStore = XhsOauthManagerFactory.redisStore(jedisPool, prefix, appId);
+            this.oauthTokenManager = XhsOauthManagerFactory.create(
+                    this.oauthClient, this.oauthTokenStore, oauthRefreshAheadMillis);
+        } else {
+            this.oauthTokenStore = null;
+            this.oauthTokenManager = null;
+        }
     }
 
     public static XhsClientBundle create(XhsClientConfig config) {
@@ -85,6 +111,37 @@ public final class XhsClientBundle {
 
     public OauthClient oauthClient() {
         return oauthClient;
+    }
+
+    /**
+     * @return true when this bundle was built with a Redis-backed OAuth token manager.
+     */
+    public boolean hasOauthTokenManager() {
+        return oauthTokenManager != null;
+    }
+
+    /**
+     * @return the Redis-backed OAuth token manager.
+     * @throws IllegalStateException if the bundle was built without a JedisPool.
+     */
+    public XhsOauthTokenManager oauthTokenManager() {
+        if (oauthTokenManager == null) {
+            throw new IllegalStateException(
+                    "OAuth token manager is not configured; build the bundle with a JedisPool");
+        }
+        return oauthTokenManager;
+    }
+
+    /**
+     * @return the underlying token store backing the OAuth token manager.
+     * @throws IllegalStateException if the bundle was built without a JedisPool.
+     */
+    public XhsOauthTokenStore oauthTokenStore() {
+        if (oauthTokenStore == null) {
+            throw new IllegalStateException(
+                    "OAuth token store is not configured; build the bundle with a JedisPool");
+        }
+        return oauthTokenStore;
     }
 
     public OrderClient orderClient() {
@@ -153,6 +210,9 @@ public final class XhsClientBundle {
 
     public static final class Builder {
         private final XhsClientConfig.Builder configBuilder = XhsClientConfig.builder();
+        private JedisPool jedisPool;
+        private String oauthKeyPrefix;
+        private long oauthRefreshAheadMillis = XhsOauthTokenManager.DEFAULT_REFRESH_AHEAD_MILLIS;
 
         private Builder() {
         }
@@ -177,8 +237,33 @@ public final class XhsClientBundle {
             return this;
         }
 
+        /**
+         * Enables the default Redis-backed OAuth token manager for clustered deployments.
+         */
+        public Builder jedisPool(JedisPool jedisPool) {
+            this.jedisPool = jedisPool;
+            return this;
+        }
+
+        /**
+         * Overrides the Redis key prefix for the OAuth token store
+         * (defaults to {@link RedisXhsOauthTokenStore#DEFAULT_KEY_PREFIX}).
+         */
+        public Builder oauthKeyPrefix(String oauthKeyPrefix) {
+            this.oauthKeyPrefix = oauthKeyPrefix;
+            return this;
+        }
+
+        /**
+         * Overrides how long before access-token expiry a refresh is triggered, in milliseconds.
+         */
+        public Builder oauthRefreshAheadMillis(long oauthRefreshAheadMillis) {
+            this.oauthRefreshAheadMillis = oauthRefreshAheadMillis;
+            return this;
+        }
+
         public XhsClientBundle build() {
-            return XhsClientBundle.create(configBuilder.build());
+            return new XhsClientBundle(configBuilder.build(), jedisPool, oauthKeyPrefix, oauthRefreshAheadMillis);
         }
     }
 }

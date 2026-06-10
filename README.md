@@ -15,7 +15,7 @@
 | 类 | 作用 |
 | --- | --- |
 | `space.hitcard.xhs.sdk.XhsClientConfig` | 统一配置对象，封装 `url/appId/appSecret/version` |
-| `space.hitcard.xhs.sdk.XhsClientBundle` | 聚合全部 XHS 业务域 client |
+| `space.hitcard.xhs.sdk.XhsClientBundle` | 聚合全部 XHS 业务域 client，支持通过 builder 注入 `JedisPool` 内置集群 OAuth token manager |
 | `space.hitcard.xhs.sdk.oauth.XhsOauthTokenManager` | OAuth token 交换、读取、刷新协调 |
 | `space.hitcard.xhs.sdk.oauth.XhsOauthManagerFactory` | OAuth manager / Redis store 工厂 |
 | `space.hitcard.xhs.sdk.oauth.RedisXhsOauthTokenStore` | Redis 共享 token 存储，适合集群 |
@@ -72,9 +72,45 @@ XhsClientBundle clients = XhsClientBundle.builder()
 
 多节点部署时，不建议每个节点自己持有本地 access token。推荐所有节点共享 Redis，由 `XhsOauthTokenManager` 统一管理 token 生命周期。
 
+推荐写法：直接在 `XhsClientBundle.builder()` 上挂 `JedisPool`，bundle 会内置一个集群可用的 Redis token manager，通过 `oauthTokenManager()` 取用。
+
 ```java
 JedisPool jedisPool = new JedisPool("redis-host", 6379);
 
+XhsClientBundle clients = XhsClientBundle.builder()
+        .url("https://your-xhs-gateway")
+        .appId("your-app-id")
+        .appSecret("your-app-secret")
+        .jedisPool(jedisPool)
+        .build();
+
+XhsOauthTokenManager tokenManager = clients.oauthTokenManager();
+
+XhsOauthTokenRecord token = tokenManager.exchangeCode("shop:123", authCode);
+String accessToken = tokenManager.requireAccessToken("shop:123");
+```
+
+可选项：
+
+```java
+XhsClientBundle clients = XhsClientBundle.builder()
+        .url("https://your-xhs-gateway")
+        .appId("your-app-id")
+        .appSecret("your-app-secret")
+        .jedisPool(jedisPool)
+        .oauthKeyPrefix("biz:xhs:oauth:")     // 自定义 Redis key 前缀
+        .oauthRefreshAheadMillis(60_000L)     // 提前多久刷新 token
+        .build();
+
+if (clients.hasOauthTokenManager()) {
+    XhsOauthTokenManager tokenManager = clients.oauthTokenManager();
+    XhsOauthTokenStore store = clients.oauthTokenStore();
+}
+```
+
+如果不通过 builder 注入 `JedisPool`，也可以单独用工厂创建：
+
+```java
 XhsClientBundle clients = XhsClientBundle.of(
         "https://your-xhs-gateway",
         "your-app-id",
