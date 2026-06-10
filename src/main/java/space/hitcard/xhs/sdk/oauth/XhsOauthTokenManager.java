@@ -51,6 +51,26 @@ public final class XhsOauthTokenManager {
                 data.getRefreshToken(), data.getRefreshTokenExpiresAt(), data.getSellerId(), data.getSellerName());
     }
 
+    /**
+     * Exchanges an authorization code and persists the token keyed by the sellerId
+     * returned in the exchange response.
+     *
+     * <p>Use this for OAuth callbacks where the shop identity (sellerId) is only known
+     * after exchanging the code.
+     */
+    public XhsOauthTokenRecord exchangeCodeBySellerId(String code) throws IOException {
+        String normalizedCode = requireNonBlank(code, "code");
+
+        GetAccessTokenRequest request = new GetAccessTokenRequest();
+        request.setCode(normalizedCode);
+        BaseResponse<GetAccessTokenResponse> response = oauthClient.execute(request);
+        GetAccessTokenResponse data = requireSuccess(response, "oauth.getAccessToken");
+
+        String sellerId = requireNonBlank(data.getSellerId(), "sellerId");
+        return persistLatest(sellerId, data.getAccessToken(), data.getAccessTokenExpiresAt(),
+                data.getRefreshToken(), data.getRefreshTokenExpiresAt(), data.getSellerId(), data.getSellerName());
+    }
+
     public String requireAccessToken(String tokenKey) throws IOException {
         return requireToken(tokenKey).getAccessToken();
     }
